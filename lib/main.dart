@@ -1,122 +1,514 @@
+// main.dart
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:table_calendar/table_calendar.dart';
 
 void main() {
   runApp(const MyApp());
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  const MyApp({Key? key}) : super(key: key);
 
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'Flutter Demo',
+      title: 'Adoption & Travel Plans',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // TRY THIS: Try running your application with "flutter run". You'll see
-        // the application has a purple toolbar. Then, without quitting the app,
-        // try changing the seedColor in the colorScheme below to Colors.green
-        // and then invoke "hot reload" (save your changes or press the "hot
-        // reload" button in a Flutter-supported IDE, or press "r" if you used
-        // the command line to start the app).
-        //
-        // Notice that the counter didn't reset back to zero; the application
-        // state is not lost during the reload. To reset the state, use hot
-        // restart instead.
-        //
-        // This works for code too, not just values: Most code changes can be
-        // tested with just a hot reload.
-        colorScheme: ColorScheme.fromSeed(seedColor: Colors.deepPurple),
+        primarySwatch: Colors.blue,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
       ),
-      home: const MyHomePage(title: 'Flutter Demo Home Page'),
+      home: const PlanManagerScreen(),
     );
   }
 }
 
-class MyHomePage extends StatefulWidget {
-  const MyHomePage({super.key, required this.title});
+// Plan data model
+class Plan {
+  String id;
+  String name;
+  String description;
+  DateTime date;
+  bool isCompleted;
 
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
-
-  final String title;
-
-  @override
-  State<MyHomePage> createState() => _MyHomePageState();
+  Plan({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.date,
+    this.isCompleted = false,
+  });
 }
 
-class _MyHomePageState extends State<MyHomePage> {
-  int _counter = 0;
+class PlanManagerScreen extends StatefulWidget {
+  const PlanManagerScreen({Key? key}) : super(key: key);
 
-  void _incrementCounter() {
+  @override
+  _PlanManagerScreenState createState() => _PlanManagerScreenState();
+}
+
+class _PlanManagerScreenState extends State<PlanManagerScreen> {
+  // List to store all plans
+  List<Plan> plans = [];
+
+  // Controllers for text input
+  final nameController = TextEditingController();
+  final descriptionController = TextEditingController();
+
+  // Calendar format and selected day
+  CalendarFormat _calendarFormat = CalendarFormat.month;
+  DateTime _focusedDay = DateTime.now();
+  DateTime? _selectedDay;
+
+  // Map to store plans by date
+  Map<DateTime, List<Plan>> plansByDate = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedDay = _focusedDay;
+
+    // Add some sample plans
+    _addPlan(
+      "Adopt a Dog",
+      "Visit the local shelter to meet potential dogs",
+      DateTime.now().add(const Duration(days: 2)),
+    );
+    _addPlan(
+      "Visit Beach",
+      "Weekend trip to the beach",
+      DateTime.now().add(const Duration(days: 5)),
+    );
+  }
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    descriptionController.dispose();
+    super.dispose();
+  }
+
+  // Method to add a new plan
+  void _addPlan(String name, String description, DateTime date) {
     setState(() {
-      // This call to setState tells the Flutter framework that something has
-      // changed in this State, which causes it to rerun the build method below
-      // so that the display can reflect the updated values. If we changed
-      // _counter without calling setState(), then the build method would not be
-      // called again, and so nothing would appear to happen.
-      _counter++;
+      final newPlan = Plan(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        name: name,
+        description: description,
+        date: date,
+      );
+
+      plans.add(newPlan);
+
+      // Add plan to date map
+      DateTime normalizedDate = DateTime(date.year, date.month, date.day);
+      if (plansByDate[normalizedDate] != null) {
+        plansByDate[normalizedDate]!.add(newPlan);
+      } else {
+        plansByDate[normalizedDate] = [newPlan];
+      }
     });
+  }
+
+  // Method to update an existing plan
+  void _updatePlan(String id, String name, String description, DateTime date) {
+    setState(() {
+      final index = plans.indexWhere((plan) => plan.id == id);
+      if (index != -1) {
+        // Remove from old date
+        final oldPlan = plans[index];
+        final oldDate = DateTime(
+          oldPlan.date.year,
+          oldPlan.date.month,
+          oldPlan.date.day,
+        );
+        plansByDate[oldDate]?.removeWhere((plan) => plan.id == id);
+
+        // Update plan
+        plans[index] = Plan(
+          id: id,
+          name: name,
+          description: description,
+          date: date,
+          isCompleted: plans[index].isCompleted,
+        );
+
+        // Add to new date
+        final newDate = DateTime(date.year, date.month, date.day);
+        if (plansByDate[newDate] != null) {
+          plansByDate[newDate]!.add(plans[index]);
+        } else {
+          plansByDate[newDate] = [plans[index]];
+        }
+      }
+    });
+  }
+
+  // Method to toggle completion status
+  void _togglePlanCompletion(String id) {
+    setState(() {
+      final index = plans.indexWhere((plan) => plan.id == id);
+      if (index != -1) {
+        plans[index].isCompleted = !plans[index].isCompleted;
+      }
+    });
+  }
+
+  // Method to delete a plan
+  void _deletePlan(String id) {
+    setState(() {
+      final plan = plans.firstWhere((plan) => plan.id == id);
+      final date = DateTime(plan.date.year, plan.date.month, plan.date.day);
+
+      // Remove from date map
+      plansByDate[date]?.removeWhere((plan) => plan.id == id);
+
+      // Remove from main list
+      plans.removeWhere((plan) => plan.id == id);
+    });
+  }
+
+  // Show dialog to add or edit a plan
+  void _showPlanDialog({Plan? plan}) {
+    final isEditing = plan != null;
+
+    if (isEditing) {
+      nameController.text = plan.name;
+      descriptionController.text = plan.description;
+    } else {
+      nameController.clear();
+      descriptionController.clear();
+    }
+
+    DateTime selectedDate =
+        isEditing ? plan.date : _selectedDay ?? DateTime.now();
+
+    showDialog(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text(isEditing ? 'Edit Plan' : 'Create New Plan'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: nameController,
+                    decoration: const InputDecoration(labelText: 'Plan Name'),
+                  ),
+                  TextField(
+                    controller: descriptionController,
+                    decoration: const InputDecoration(labelText: 'Description'),
+                    maxLines: 3,
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      const Text('Date: '),
+                      TextButton(
+                        child: Text(
+                          DateFormat('MMM dd, yyyy').format(selectedDate),
+                        ),
+                        onPressed: () async {
+                          final pickedDate = await showDatePicker(
+                            context: context,
+                            initialDate: selectedDate,
+                            firstDate: DateTime.now().subtract(
+                              const Duration(days: 365),
+                            ),
+                            lastDate: DateTime.now().add(
+                              const Duration(days: 365),
+                            ),
+                          );
+                          if (pickedDate != null) {
+                            selectedDate = pickedDate;
+                          }
+                        },
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(context).pop();
+                },
+                child: const Text('Cancel'),
+              ),
+              TextButton(
+                onPressed: () {
+                  final name = nameController.text.trim();
+                  final description = descriptionController.text.trim();
+
+                  if (name.isNotEmpty) {
+                    if (isEditing) {
+                      _updatePlan(plan.id, name, description, selectedDate);
+                    } else {
+                      _addPlan(name, description, selectedDate);
+                    }
+                    Navigator.of(context).pop();
+                  }
+                },
+                child: Text(isEditing ? 'Update' : 'Create'),
+              ),
+            ],
+          ),
+    );
+  }
+
+  // Build the calendar widget
+  Widget _buildCalendar() {
+    return TableCalendar(
+      firstDay: DateTime.utc(2020, 1, 1),
+      lastDay: DateTime.utc(2030, 12, 31),
+      focusedDay: _focusedDay,
+      calendarFormat: _calendarFormat,
+      selectedDayPredicate: (day) {
+        return isSameDay(_selectedDay, day);
+      },
+      onDaySelected: (selectedDay, focusedDay) {
+        setState(() {
+          _selectedDay = selectedDay;
+          _focusedDay = focusedDay;
+        });
+      },
+      onFormatChanged: (format) {
+        setState(() {
+          _calendarFormat = format;
+        });
+      },
+      eventLoader: (day) {
+        final normalizedDay = DateTime(day.year, day.month, day.day);
+        return plansByDate[normalizedDay] ?? [];
+      },
+      calendarStyle: const CalendarStyle(
+        markerDecoration: BoxDecoration(
+          color: Colors.blue,
+          shape: BoxShape.circle,
+        ),
+      ),
+    );
+  }
+
+  // Build a single plan item for the list
+  Widget _buildPlanItem(Plan plan) {
+    return GestureDetector(
+      onLongPress: () {
+        _showPlanDialog(plan: plan);
+      },
+      onDoubleTap: () {
+        _deletePlan(plan.id);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('${plan.name} deleted')));
+      },
+      child: Dismissible(
+        key: Key(plan.id),
+        background: Container(
+          color: Colors.green,
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.only(left: 20),
+          child: const Icon(Icons.check, color: Colors.white),
+        ),
+        secondaryBackground: Container(
+          color: Colors.red,
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.only(right: 20),
+          child: const Icon(Icons.cancel, color: Colors.white),
+        ),
+        onDismissed: (direction) {
+          _togglePlanCompletion(plan.id);
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                plan.isCompleted
+                    ? '${plan.name} marked as incomplete'
+                    : '${plan.name} marked as completed',
+              ),
+              action: SnackBarAction(
+                label: 'UNDO',
+                onPressed: () {
+                  _togglePlanCompletion(plan.id);
+                },
+              ),
+            ),
+          );
+        },
+        confirmDismiss: (direction) async {
+          _togglePlanCompletion(plan.id);
+          return false;
+        },
+        child: Container(
+          margin: const EdgeInsets.symmetric(vertical: 4),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: plan.isCompleted ? Colors.green[100] : Colors.blue[100],
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: plan.isCompleted ? Colors.green : Colors.blue,
+              width: 1,
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    plan.isCompleted
+                        ? Icons.check_circle
+                        : Icons.circle_outlined,
+                    color: plan.isCompleted ? Colors.green : Colors.blue,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      plan.name,
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        decoration:
+                            plan.isCompleted
+                                ? TextDecoration.lineThrough
+                                : TextDecoration.none,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              if (plan.description.isNotEmpty)
+                Padding(
+                  padding: const EdgeInsets.only(left: 32, top: 4),
+                  child: Text(
+                    plan.description,
+                    style: TextStyle(
+                      color: Colors.grey[700],
+                      decoration:
+                          plan.isCompleted
+                              ? TextDecoration.lineThrough
+                              : TextDecoration.none,
+                    ),
+                  ),
+                ),
+              Padding(
+                padding: const EdgeInsets.only(left: 32, top: 4),
+                child: Text(
+                  DateFormat('MMM dd, yyyy').format(plan.date),
+                  style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // Build the plan list for selected date
+  Widget _buildPlanList() {
+    final selectedDate = _selectedDay ?? DateTime.now();
+    final normalizedDate = DateTime(
+      selectedDate.year,
+      selectedDate.month,
+      selectedDate.day,
+    );
+    final plansForDay = plansByDate[normalizedDate] ?? [];
+
+    if (plansForDay.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.calendar_today, size: 48, color: Colors.grey),
+            const SizedBox(height: 16),
+            Text(
+              'No plans for ${DateFormat('MMM dd, yyyy').format(selectedDate)}',
+              style: const TextStyle(color: Colors.grey),
+            ),
+            const SizedBox(height: 8),
+            ElevatedButton(
+              onPressed: () {
+                _showPlanDialog();
+              },
+              child: const Text('Add a Plan'),
+            ),
+          ],
+        ),
+      );
+    }
+
+    return ListView.builder(
+      itemCount: plansForDay.length,
+      itemBuilder: (context, index) {
+        return _buildPlanItem(plansForDay[index]);
+      },
+    );
+  }
+
+  // DragTarget for dropping plans on calendar
+  Widget _buildDragTarget(BuildContext context) {
+    return DragTarget<Plan>(
+      builder: (context, candidateData, rejectedData) {
+        return _buildCalendar();
+      },
+      onAccept: (plan) {
+        _updatePlan(
+          plan.id,
+          plan.name,
+          plan.description,
+          _selectedDay ?? DateTime.now(),
+        );
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '${plan.name} moved to ${DateFormat('MMM dd, yyyy').format(_selectedDay ?? DateTime.now())}',
+            ),
+          ),
+        );
+      },
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Scaffold(
-      appBar: AppBar(
-        // TRY THIS: Try changing the color here to a specific color (to
-        // Colors.amber, perhaps?) and trigger a hot reload to see the AppBar
-        // change color while the other colors stay the same.
-        backgroundColor: Theme.of(context).colorScheme.inversePrimary,
-        // Here we take the value from the MyHomePage object that was created by
-        // the App.build method, and use it to set our appbar title.
-        title: Text(widget.title),
-      ),
-      body: Center(
-        // Center is a layout widget. It takes a single child and positions it
-        // in the middle of the parent.
-        child: Column(
-          // Column is also a layout widget. It takes a list of children and
-          // arranges them vertically. By default, it sizes itself to fit its
-          // children horizontally, and tries to be as tall as its parent.
-          //
-          // Column has various properties to control how it sizes itself and
-          // how it positions its children. Here we use mainAxisAlignment to
-          // center the children vertically; the main axis here is the vertical
-          // axis because Columns are vertical (the cross axis would be
-          // horizontal).
-          //
-          // TRY THIS: Invoke "debug painting" (choose the "Toggle Debug Paint"
-          // action in the IDE, or press "p" in the console), to see the
-          // wireframe for each widget.
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: <Widget>[
-            const Text('You have pushed the button this many times:'),
-            Text(
-              '$_counter',
-              style: Theme.of(context).textTheme.headlineMedium,
+      appBar: AppBar(title: const Text('Adoption & Travel Plans')),
+      body: Column(
+        children: [
+          _buildDragTarget(context),
+          const Divider(),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: Row(
+              children: [
+                Text(
+                  'Plans for ${DateFormat('MMM dd, yyyy').format(_selectedDay ?? DateTime.now())}',
+                  style: const TextStyle(
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const Spacer(),
+                ElevatedButton.icon(
+                  onPressed: () {
+                    _showPlanDialog();
+                  },
+                  icon: const Icon(Icons.add),
+                  label: const Text('Create Plan'),
+                ),
+              ],
             ),
-          ],
-        ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: _buildPlanList(),
+            ),
+          ),
+        ],
       ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _incrementCounter,
-        tooltip: 'Increment',
-        child: const Icon(Icons.add),
-      ), // This trailing comma makes auto-formatting nicer for build methods.
     );
   }
 }
