@@ -23,6 +23,34 @@ class MyApp extends StatelessWidget {
   }
 }
 
+// Priority enum
+enum PriorityLevel { low, medium, high }
+
+// Extension to get display name and color for priority
+extension PriorityExtension on PriorityLevel {
+  String get name {
+    switch (this) {
+      case PriorityLevel.low:
+        return 'Low';
+      case PriorityLevel.medium:
+        return 'Medium';
+      case PriorityLevel.high:
+        return 'High';
+    }
+  }
+
+  Color get color {
+    switch (this) {
+      case PriorityLevel.low:
+        return Colors.green;
+      case PriorityLevel.medium:
+        return Colors.orange;
+      case PriorityLevel.high:
+        return Colors.red;
+    }
+  }
+}
+
 // Plan data model
 class Plan {
   String id;
@@ -30,6 +58,7 @@ class Plan {
   String description;
   DateTime date;
   bool isCompleted;
+  PriorityLevel priority;
 
   Plan({
     required this.id,
@@ -37,6 +66,7 @@ class Plan {
     required this.description,
     required this.date,
     this.isCompleted = false,
+    this.priority = PriorityLevel.medium,
   });
 }
 
@@ -63,6 +93,9 @@ class _PlanManagerScreenState extends State<PlanManagerScreen> {
   // Map to store plans by date
   Map<DateTime, List<Plan>> plansByDate = {};
 
+  // Selected priority level for new/edited plans
+  PriorityLevel selectedPriority = PriorityLevel.medium;
+
   @override
   void initState() {
     super.initState();
@@ -73,11 +106,13 @@ class _PlanManagerScreenState extends State<PlanManagerScreen> {
       "Adopt a Dog",
       "Visit the local shelter to meet potential dogs",
       DateTime.now().add(const Duration(days: 2)),
+      PriorityLevel.high,
     );
     _addPlan(
       "Visit Beach",
       "Weekend trip to the beach",
       DateTime.now().add(const Duration(days: 5)),
+      PriorityLevel.low,
     );
   }
 
@@ -89,13 +124,19 @@ class _PlanManagerScreenState extends State<PlanManagerScreen> {
   }
 
   // Method to add a new plan
-  void _addPlan(String name, String description, DateTime date) {
+  void _addPlan(
+    String name,
+    String description,
+    DateTime date,
+    PriorityLevel priority,
+  ) {
     setState(() {
       final newPlan = Plan(
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         name: name,
         description: description,
         date: date,
+        priority: priority,
       );
 
       plans.add(newPlan);
@@ -104,14 +145,37 @@ class _PlanManagerScreenState extends State<PlanManagerScreen> {
       DateTime normalizedDate = DateTime(date.year, date.month, date.day);
       if (plansByDate[normalizedDate] != null) {
         plansByDate[normalizedDate]!.add(newPlan);
+        // Sort by priority
+        _sortPlansByPriority(normalizedDate);
       } else {
         plansByDate[normalizedDate] = [newPlan];
       }
     });
   }
 
+  // Sort plans by priority (high to low)
+  void _sortPlansByPriority(DateTime date) {
+    if (plansByDate[date] != null) {
+      plansByDate[date]!.sort((a, b) {
+        // Sort by priority first (high to low)
+        int priorityCompare = b.priority.index.compareTo(a.priority.index);
+        if (priorityCompare != 0) {
+          return priorityCompare;
+        }
+        // If same priority, sort by completion status
+        return a.isCompleted ? 1 : -1;
+      });
+    }
+  }
+
   // Method to update an existing plan
-  void _updatePlan(String id, String name, String description, DateTime date) {
+  void _updatePlan(
+    String id,
+    String name,
+    String description,
+    DateTime date,
+    PriorityLevel priority,
+  ) {
     setState(() {
       final index = plans.indexWhere((plan) => plan.id == id);
       if (index != -1) {
@@ -131,12 +195,14 @@ class _PlanManagerScreenState extends State<PlanManagerScreen> {
           description: description,
           date: date,
           isCompleted: plans[index].isCompleted,
+          priority: priority,
         );
 
         // Add to new date
         final newDate = DateTime(date.year, date.month, date.day);
         if (plansByDate[newDate] != null) {
           plansByDate[newDate]!.add(plans[index]);
+          _sortPlansByPriority(newDate);
         } else {
           plansByDate[newDate] = [plans[index]];
         }
@@ -150,6 +216,14 @@ class _PlanManagerScreenState extends State<PlanManagerScreen> {
       final index = plans.indexWhere((plan) => plan.id == id);
       if (index != -1) {
         plans[index].isCompleted = !plans[index].isCompleted;
+
+        // Re-sort plans for the date
+        final date = DateTime(
+          plans[index].date.year,
+          plans[index].date.month,
+          plans[index].date.day,
+        );
+        _sortPlansByPriority(date);
       }
     });
   }
@@ -175,9 +249,11 @@ class _PlanManagerScreenState extends State<PlanManagerScreen> {
     if (isEditing) {
       nameController.text = plan.name;
       descriptionController.text = plan.description;
+      selectedPriority = plan.priority;
     } else {
       nameController.clear();
       descriptionController.clear();
+      selectedPriority = PriorityLevel.medium;
     }
 
     DateTime selectedDate =
@@ -227,6 +303,45 @@ class _PlanManagerScreenState extends State<PlanManagerScreen> {
                       ),
                     ],
                   ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      const Text('Priority: '),
+                      const SizedBox(width: 8),
+                      StatefulBuilder(
+                        builder: (context, setState) {
+                          return DropdownButton<PriorityLevel>(
+                            value: selectedPriority,
+                            items:
+                                PriorityLevel.values.map((priority) {
+                                  return DropdownMenuItem<PriorityLevel>(
+                                    value: priority,
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 12,
+                                          height: 12,
+                                          decoration: BoxDecoration(
+                                            color: priority.color,
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(priority.name),
+                                      ],
+                                    ),
+                                  );
+                                }).toList(),
+                            onChanged: (newValue) {
+                              setState(() {
+                                selectedPriority = newValue!;
+                              });
+                            },
+                          );
+                        },
+                      ),
+                    ],
+                  ),
                 ],
               ),
             ),
@@ -244,9 +359,20 @@ class _PlanManagerScreenState extends State<PlanManagerScreen> {
 
                   if (name.isNotEmpty) {
                     if (isEditing) {
-                      _updatePlan(plan.id, name, description, selectedDate);
+                      _updatePlan(
+                        plan.id,
+                        name,
+                        description,
+                        selectedDate,
+                        selectedPriority,
+                      );
                     } else {
-                      _addPlan(name, description, selectedDate);
+                      _addPlan(
+                        name,
+                        description,
+                        selectedDate,
+                        selectedPriority,
+                      );
                     }
                     Navigator.of(context).pop();
                   }
@@ -376,6 +502,25 @@ class _PlanManagerScreenState extends State<PlanManagerScreen> {
                       ),
                     ),
                   ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 2,
+                    ),
+                    decoration: BoxDecoration(
+                      color: plan.priority.color.withOpacity(0.2),
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: plan.priority.color, width: 1),
+                    ),
+                    child: Text(
+                      plan.priority.name,
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: plan.priority.color,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
                 ],
               ),
               if (plan.description.isNotEmpty)
@@ -415,6 +560,9 @@ class _PlanManagerScreenState extends State<PlanManagerScreen> {
       selectedDate.day,
     );
     final plansForDay = plansByDate[normalizedDate] ?? [];
+
+    // Sort plans by priority
+    _sortPlansByPriority(normalizedDate);
 
     if (plansForDay.isEmpty) {
       return Center(
@@ -459,6 +607,7 @@ class _PlanManagerScreenState extends State<PlanManagerScreen> {
           plan.name,
           plan.description,
           _selectedDay ?? DateTime.now(),
+          plan.priority,
         );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
